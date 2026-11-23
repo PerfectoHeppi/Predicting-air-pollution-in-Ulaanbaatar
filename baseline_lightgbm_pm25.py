@@ -58,8 +58,10 @@ print("PM2.5 > 1000:", (train.pm25 > 1000).sum())
 print("PM2.5 = 0:", (train.pm25 == 0).sum())
 
 # 7. Which stations have no latitude/longitude
-print(train[train.latitude.isna()].station.value_counts())
+print(train[train.latitude.isna(s)].station.value_counts())
 print(test[test.latitude.isna()].station.value_counts())
+
+#ym nemsens
 
 def clean(df):
     df = df.copy()
