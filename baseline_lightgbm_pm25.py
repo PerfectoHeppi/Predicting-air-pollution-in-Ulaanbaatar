@@ -66,7 +66,8 @@ def clean(df):
     df["datetime"] = pd.to_datetime(df.datetime)
     df = df.sort_values(["station", "datetime"]).reset_index(drop=True)
     n_before = df.temperature.isna().sum()
-    # fill missing temperature from the same station's neighbouring hours (gaps up to 3 hours)
+    # Hooson datag oiirhon tsagtai baigaa datagaar nuhuh
+    # Zuvhun temperature dotor ni missing data baisan baina eniig zassan.
     df["temperature"] = (df.set_index("datetime").groupby("station")["temperature"]
                          .transform(lambda s: s.interpolate(method="time", limit=3, limit_area="inside")).values)
     print(f"Хоосон температур: {n_before} → {df.temperature.isna().sum()}")
