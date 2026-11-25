@@ -84,6 +84,9 @@ test = clean(test)
 
 
 def make_features(df, categories=None):
+    df = pd.concat([train.drop(columns="pm25"), test], ignore_index=True)
+    df["dt"] = pd.to_datetime(df.datetime)
+    d = df.dt
     d = pd.to_datetime(df.datetime)
     X = pd.DataFrame({
         "station": pd.Categorical(df.station, categories=categories),
