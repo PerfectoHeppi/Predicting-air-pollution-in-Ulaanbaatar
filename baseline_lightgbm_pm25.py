@@ -58,7 +58,7 @@ print("PM2.5 > 1000:", (train.pm25 > 1000).sum())
 print("PM2.5 = 0:", (train.pm25 == 0).sum())
 
 # 7. Which stations have no latitude/longitude
-print(train[train.latitude.isna(s)].station.value_counts())
+print(train[train.latitude.isna()].station.value_counts())
 print(test[test.latitude.isna()].station.value_counts())
 
 #ym nemsens
@@ -115,6 +115,10 @@ def make_features(train, test, categories):
 
     n = len(train)
     return X.iloc[:n].reset_index(drop=True), X.iloc[n:].reset_index(drop=True)
+
+stations = sorted(train.station.unique())
+X, X_test = make_features(train, test, stations)
+y = train.pm25
 
 # ## 3. Validation
 #
