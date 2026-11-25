@@ -83,26 +83,38 @@ test = clean(test)
 # Baseline-д зөвхөн хамгийн энгийн feature-үүдийг ашиглана: станц, цаг, гараг, сар, температур, чийгшил.
 
 
-def make_features(df, categories=None):
+def make_features(train, test, categories):
     df = pd.concat([train.drop(columns="pm25"), test], ignore_index=True)
-    df["dt"] = pd.to_datetime(df.datetime)
-    d = df.dt
-    d = pd.to_datetime(df.datetime)
+    df["time"] = pd.to_datetime(df.datetime)
+
     X = pd.DataFrame({
         "station": pd.Categorical(df.station, categories=categories),
-        "hour": d.dt.hour,
-        "dayofweek": d.dt.dayofweek,
-        "month": d.dt.month,
+        "hour": df.time.dt.hour,
+        "dayofweek": df.time.dt.dayofweek,
+        "month": df.time.dt.month,
+        "year": df.time.dt.year,
+        "dayofyear": df.time.dt.dayofyear,
+        "is_heating": df.time.dt.month.isin([10, 11, 12, 1, 2, 3, 4]).astype(int),
         "temperature": df.temperature,
         "humidity": df.humidity,
     })
-    return X
 
+    g = df.groupby("time")
+    X["city_temp"] = g.temperature.transform("mean")
+    X["city_hum"] = g.humidity.transform("mean")
+    X["temp_minus_city"] = df.temperature - X.city_temp
 
-stations = sorted(train.station.unique())
-X = make_features(train, stations)
-y = train.pm25
-X_test = make_features(test, stations)
+    df["_i"] = np.arange(len(df))
+    s = df.sort_values(["station", "time"])
+    for w in ["6h", "24h", "72h"]:
+        r = s.groupby("station").rolling(w, on="time")
+        X.loc[s._i.values, f"temp_mean_{w}"] = r.temperature.mean().values
+        X.loc[s._i.values, f"temp_min_{w}"] = r.temperature.min().values
+        X.loc[s._i.values, f"hum_mean_{w}"] = r.humidity.mean().values
+    X["temp_change_24h"] = df.temperature - X["temp_mean_24h"]
+
+    n = len(train)
+    return X.iloc[:n].reset_index(drop=True), X.iloc[n:].reset_index(drop=True)
 
 # ## 3. Validation
 #
