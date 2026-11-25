@@ -29,6 +29,55 @@ d = pd.to_datetime(train.datetime)
 season = np.where(d.dt.month.isin([11, 12, 1, 2]), "Өвөл (11-2 сар)", "Бусад сар")
 print(train.groupby([season, d.dt.hour]).pm25.mean().unstack(0).round(0))
 
+# Dataniihaa medeelliig avah tegeed aldaag olj zasah (data cleaning)
+# Number of rows
+print(train.shape, test.shape)
+
+# 1. Duplicate station + hour
+print("Давхардсан (train):", train.duplicated(["station", "datetime"]).sum())
+print("Давхардсан (test):", test.duplicated(["station", "datetime"]).sum())
+
+# 2. Broken datetimes (ones pandas can't read)
+print("Буруу огноо (train):", pd.to_datetime(train.datetime, errors="coerce").isna().sum())
+print("Буруу огноо (test):", pd.to_datetime(test.datetime, errors="coerce").isna().sum())
+
+# 3. Station names (look for typos / extra spaces)
+print(train.station.value_counts())
+print(test.station.value_counts())
+
+# 4. Empty values in every column
+print(train.isna().sum())
+print(test.isna().sum())
+
+# 5. Ranges: min / max of temperature, humidity, pm25
+print(train[["temperature", "humidity", "pm25"]].describe().round(1))
+print(test[["temperature", "humidity"]].describe().round(1))
+
+# 6. PM2.5 extremes
+print("PM2.5 > 1000:", (train.pm25 > 1000).sum())
+print("PM2.5 = 0:", (train.pm25 == 0).sum())
+
+# 7. Which stations have no latitude/longitude
+print(train[train.latitude.isna(s)].station.value_counts())
+print(test[test.latitude.isna()].station.value_counts())
+
+#ym nemsens
+
+def clean(df):
+    df = df.copy()
+    df["datetime"] = pd.to_datetime(df.datetime)
+    df = df.sort_values(["station", "datetime"]).reset_index(drop=True)
+    n_before = df.temperature.isna().sum()
+    # Hooson datag oiirhon tsagtai baigaa datagaar nuhuh
+    # Zuvhun temperature dotor ni missing data baisan baina eniig zassan.
+    df["temperature"] = (df.set_index("datetime").groupby("station")["temperature"]
+                         .transform(lambda s: s.interpolate(method="time", limit=3, limit_area="inside")).values)
+    print(f"Хоосон температур: {n_before} → {df.temperature.isna().sum()}")
+    return df
+
+train = clean(train)
+test = clean(test)
+
 # ## 2. Feature бэлдэх
 #
 # Baseline-д зөвхөн хамгийн энгийн feature-үүдийг ашиглана: станц, цаг, гараг, сар, температур, чийгшил.
