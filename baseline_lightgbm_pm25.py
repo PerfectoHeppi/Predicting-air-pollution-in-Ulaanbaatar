@@ -15,6 +15,11 @@ from sklearn.metrics import mean_squared_error
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Data")
 train = pd.read_csv(f"{DATA_DIR}/train.csv")
 test = pd.read_csv(f"{DATA_DIR}/test.csv")
+
+# Validation долоо хоногуудыг clean()-ээс өмнө сонгоно (мөрийн эрэмбэ өөрчлөгдөхөөс өмнө)
+week0 = pd.to_datetime(train.datetime).dt.to_period("W").astype(str)
+rng = np.random.default_rng(0)
+val_weeks = set(rng.choice(week0.unique(), size=int(week0.nunique() * 0.3), replace=False))
 print(train.shape, test.shape)
 print(train.head())
 
@@ -78,6 +83,9 @@ def clean(df):
 train = clean(train)
 test = clean(test)
 
+
+
+
 # ## 2. Feature бэлдэх
 #
 # Baseline-д зөвхөн хамгийн энгийн feature-үүдийг ашиглана: станц, цаг, гараг, сар, температур, чийгшил.
@@ -90,10 +98,10 @@ def make_features(train, test, categories):
     X = pd.DataFrame({
         "station": pd.Categorical(df.station, categories=categories),
         "hour": df.time.dt.hour,
-        "dayofweek": df.time.dt.dayofweek,
+        "dayofweek": df.time.dt.day_of_week,
         "month": df.time.dt.month,
         "year": df.time.dt.year,
-        "dayofyear": df.time.dt.dayofyear,
+        "dayofyear": df.time.dt.day_of_year,
         "is_heating": df.time.dt.month.isin([10, 11, 12, 1, 2, 3, 4]).astype(int),
         "temperature": df.temperature,
         "humidity": df.humidity,
@@ -126,8 +134,6 @@ y = train.pm25
 # Мөр бүрээр санамсаргүй хуваавал хөрш цагуудын утга хоорондоо хэт төстэй байдаг тул оноо худлаа сайн гарна.
 
 week = pd.to_datetime(train.datetime).dt.to_period("W").astype(str)
-rng = np.random.default_rng(0)
-val_weeks = set(rng.choice(week.unique(), size=int(week.nunique() * 0.3), replace=False))
 is_val = week.isin(val_weeks).values
 
 params = dict(objective="regression", learning_rate=0.005, num_leaves=10, min_data_in_leaf=120,
