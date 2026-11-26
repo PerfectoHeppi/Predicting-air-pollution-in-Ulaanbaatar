@@ -19,6 +19,25 @@ RUN_TUNING = False    # Hyperparameter хайлт (10-30 минут). True бо�
 RUN_CATBOOST = True  # CatBoost-той харьцуулах. True болгож ажиллуулна
 DROP = []             # CV тестийн дараа хасах feature-үүдээ энд бичнэ, жишээ нь ["is_weekend", "very_cold"]
 
+# АНУ-ын ЭСЯ-ны PM2.5 (гадны дата). Data/embassy дотор 5 файл байна
+def load_embassy():
+    files = sorted(glob.glob(os.path.join(DATA_DIR, "embassy", "*.csv")))
+    e = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    e = e[(e["QC Name"] == "Valid") & (e["Raw Conc."] >= 0)]   # Invalid, Missing утгыг хасна
+    e["time"] = pd.to_datetime(e[["Year", "Month", "Day", "Hour"]].rename(columns=str.lower))
+    s = e.groupby("time")["Raw Conc."].mean()
+    s = s.reindex(pd.date_range("2018-12-28", "2023-02-01", freq="h"))
+
+    out = pd.DataFrame(index=s.index)
+    # ЭСЯ-ны хэмжилт манай дататай ~2 цагийн зөрүүтэй тул t-1 ... t+4 цагийн утгыг авна
+    for k in [-1, 0, 1, 2, 3, 4]:
+        out[f"emb_t{k:+d}"] = s.shift(-k)
+    out["emb_mean_t0_t4"] = s.shift(-4).rolling(5, min_periods=1).mean()
+    out["emb_mean_12h"] = s.rolling(12, center=True, min_periods=1).mean()
+    out["emb_mean_24h"] = s.rolling(24, center=True, min_periods=1).mean()
+    out["emb_max_24h"] = s.rolling(24, center=True, min_periods=1).max()
+    return out
+
 # Kaggle дээр тэмцээний дата /kaggle/input доор байрлана
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Data")
 train = pd.read_csv(f"{DATA_DIR}/train.csv")
@@ -97,7 +116,7 @@ test = clean(test)
 # Baseline-д зөвхөн хамгийн энгийн feature-үүдийг ашиглана: станц, цаг, гараг, сар, температур, чийгшил.
 
 
-def make_features(train, test, categories):
+def make_features(train, test, categories, embassy=None):
     df = pd.concat([train.drop(columns="pm25"), test], ignore_index=True)
     df["time"] = pd.to_datetime(df.datetime)
 
@@ -131,11 +150,15 @@ def make_features(train, test, categories):
         X.loc[s._i.values, f"hum_mean_{w}"] = r.humidity.mean().values
     X["temp_change_24h"] = df.temperature - X["temp_mean_24h"]
 
+    if embassy is not None:
+        X = pd.concat([X, embassy.reindex(df.time).reset_index(drop=True)], axis=1)
+    
     n = len(train)
     return X.iloc[:n].reset_index(drop=True), X.iloc[n:].reset_index(drop=True)
 
 stations = sorted(train.station.unique())
-X, X_test = make_features(train, test, stations)
+embassy = load_embassy()
+X, X_test = make_features(train, test, stations, embassy)
 y = train.pm25
 
 # CV тестээр хэрэггүй гэж гарсан feature-үүдийг хасна (DROP-ийг дээр тохируулна)
