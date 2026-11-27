@@ -199,11 +199,6 @@ def make_features(train, test, categories, embassy=None, weather=None):
 
     if embassy is not None:
         X = pd.concat([X, embassy.reindex(df.time).reset_index(drop=True)], axis=1)
-            # Станц бүр ЭСЯ-наас хэд дахин бохир бэ (зөвхөн train-ээс тооцно)
-        tr = slice(0, len(train))
-        ratio = (train.pm25.values / (X.loc[:len(train) - 1, "emb_mean_t0_t4"] + 5)).groupby(df.station.iloc[tr].values).median()
-        X["station_emb_ratio"] = df.station.map(ratio).astype(float)
-        X["emb_scaled"] = X.station_emb_ratio * X.emb_mean_t0_t4
     
     if weather is not None:
         X = pd.concat([X, weather.reindex(df.time).reset_index(drop=True)], axis=1)
@@ -355,21 +350,46 @@ def blend_predict(X_tr, y_tr, X_pr, cb_rounds, rounds):
         "lgb":      np.mean([lgb_fit_predict(X_tr, y_tr, X_pr, rounds, seed=s) for s in [1, 2, 3]], axis=0),
         "lgb_peak": lgb_fit_predict(X_tr, y_tr, X_pr, rounds, peak=True),
         "lgb_log":  lgb_fit_predict(X_tr, y_tr, X_pr, rounds, log=True),
-        "cat":      cb_fit_predict(X_tr, y_tr, X_pr, cb_rounds),
+        # "cat":      cb_fit_predict(X_tr, y_tr, X_pr, cb_rounds),
     }
     return pd.DataFrame(preds)
+
+# ## Blend-ийг 5-fold CV-ээр шалгах (Kaggle submission хэмнэх зорилготой)
+RUN_BLEND_CV = True
+
+if RUN_BLEND_CV:
+    oof = pd.DataFrame(0.0, index=X.index, columns=["lgb", "lgb_peak", "lgb_log"])
+    for tr_i, va_i in gkf.split(X, y, groups):
+        Xtr, ytr, Xva = X.iloc[tr_i], y.iloc[tr_i], X.iloc[va_i]
+        oof.iloc[va_i, 0] = lgb_fit_predict(Xtr, ytr, Xva, best_rounds)
+        oof.iloc[va_i, 1] = lgb_fit_predict(Xtr, ytr, Xva, best_rounds, peak=True)
+        oof.iloc[va_i, 2] = lgb_fit_predict(Xtr, ytr, Xva, best_rounds, log=True)
+
+    rmse = lambda p: mean_squared_error(y, p) ** 0.5
+    for c in oof:
+        print(f"CV {c:10s} RMSE: {rmse(oof[c]):.2f}")
+
+    # Хэд хэдэн жинг туршина. Хамгийн бага RMSE-тэйг сонгоно
+    candidates = {
+        "зөвхөн lgb":          {"lgb": 1.0, "lgb_peak": 0.0,  "lgb_log": 0.0},
+        "lgb + peak":          {"lgb": 0.6, "lgb_peak": 0.4,  "lgb_log": 0.0},
+        "lgb + peak + log":    {"lgb": 0.6, "lgb_peak": 0.25, "lgb_log": 0.15},
+        "lgb + log":           {"lgb": 0.8, "lgb_peak": 0.0,  "lgb_log": 0.2},
+    }
+    for name, wts in candidates.items():
+        print(f"CV {name:18s} RMSE: {rmse(sum(oof[c] * w for c, w in wts.items())):.2f}")
 
 # Validation дээр загвар бүр болон холимог хэр байгааг харна
 cb_rounds = cbm.get_best_iteration() if RUN_CATBOOST else 1500
 P = blend_predict(X[~is_val], y[~is_val], X[is_val], cb_rounds, best_rounds)
 for c in P:
     print(f"{c:10s} RMSE:", round(mean_squared_error(y[is_val], P[c]) ** 0.5, 2))
-WEIGHTS = {"lgb": 0.4, "lgb_peak": 0.25, "lgb_log": 0.1, "cat": 0.25}
+WEIGHTS = {"lgb": 0.4, "lgb_peak": 0.25, "lgb_log": 0.1,}
 p_blend = sum(P[c] * w for c, w in WEIGHTS.items())
 print("Blend RMSE:", round(mean_squared_error(y[is_val], p_blend) ** 0.5, 2))
 
 # Бүх train дээр сургаж submission
-P_test = blend_predict(X, y, X_test, int(cb_rounds * 1.2), int(best_rounds * 1.2))
+P_test = blend_predict(X, y, X_test, cb_rounds, best_rounds)
 pm = sum(P_test[c] * w for c, w in WEIGHTS.items())
 submission = pd.DataFrame({"ID": test.ID, "pm25": pm.round(2).values})
 submission.to_csv("submission.csv", index=False)
